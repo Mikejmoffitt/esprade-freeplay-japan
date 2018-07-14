@@ -7,8 +7,9 @@
 ; Port definitions and useful RAM values
 INPUT_P1 = $101254
 INPUT_P2 = $101256
-INPUT_P1_HW = $D00000
-INPUT_P2_HW = $D00002
+PORT_IN0 = $D00010
+PORT_IN1 = $D00012
+PORT_DSW = $D00014
 CRED_COUNT = $101226
 CRED_PREV = $101228
 COINAGE_CFG = $101299
@@ -64,6 +65,89 @@ S_HOWTOPLAY = $B
 S_CAVESC = $C
 S_ATLUSSC = $D
 S_UNK = $E
+
+; ============================================================================
+; Settings patches
+; ============================================================================
+;
+; Configuration format loaded from EEPROM:
+; 10129E: ; DDONPACH
+; -------- -------c Discount continue
+;                   0 - normal continue
+;                   1 - discount continue
+; -------- ------f- Flip screen
+;                   0 - normal
+;                   1 - reverse screen
+; -------- -----A-- Full-auto
+;                   0 - C button not used
+;                   1 - C button full auto
+; -------- ----s--- Demo sound disable
+;                   0 - Demo sound
+;                   1 - No demo sound
+; -------- --11---- Coin slot 1 config
+;                   00 - 1 coin 1 play
+;                   11 - Free play
+; -------- 11------ Coin slot 2 config
+;                   00 - 1 coin 1 play
+;                   11 - Free play
+; ------dd -------- Difficulty
+;                   00 - B (normal)
+;                   01 - A (easy)
+;                   10 - C (hard)
+;                   11 - D (very hard)
+
+; ----ee-- -------- Extend
+;                   00 - 6,000,000; 20,000,000pts
+;                   01 - 15,000,000; 30,000,000pts
+;                   10 - 10,000,000pts every
+;                   11 - No extend
+;
+; --hh---- -------- Hero counts
+;                   00 - 3
+;                   01 - 5
+;                   10 - 2
+;                   11 - 1
+;
+; c------- -------- Continue
+;                   0 - continue on
+;                   1 - continue off
+
+; Load config from DIP switches instead of EEPROM
+dip_settings_load:
+;	jmp	dip_settings_kludge
+
+; ============================================================================
+; Patches to change inputs from D00000 to D00010
+; ============================================================================
+	ORG	$0006C6
+	jsr	read_port0_d0
+
+	ORG	$0006DA
+	jsr	read_port1_d1
+
+	ORG	$000882
+	jsr	read_port0_d0
+
+;	; Service button check
+	ORG	$000878
+	btst	#2, (PORT_IN1+1).l
+
+;	; Exiting config menu
+	ORG	$0474F0
+	btst	#2, (PORT_IN1+1).l
+	ORG	$0474FA
+	jsr	read_port0_d0
+
+;	ORG	$04A35E
+;	jsr	read_port1_d5
+
+;	ORG	$04A3B8
+;	jmp	read_port0_custom
+;	move.w	(PORT_IN0).l, (-$2, a7)
+
+
+
+
 
 ; Set the "3 coins 1 play" text to read FREE PLAY instead
 ; ============================================================================
@@ -447,3 +531,60 @@ reset:
 	movea.l	#$69110000, sp
 	move	#$2700, sr
 	jmp	$005972
+	
+dip_settings_kludge:
+	move.w	(PORT_DSW).l, d7
+	not.w	d7
+	move.w	d7, (a0)+
+	jmp	$04A230
+
+read_port0_d0:
+	move.w	d1, -(sp)
+	; Main inputs are mostly the same
+	move.w	(PORT_IN0).l, d0
+	ori.w	#$FF80, d0
+	; Read in start button from port 1
+	move.w	(PORT_IN1).l, d1
+	lsl.w	#3, d1
+	ori.b	#$7F, d1
+	and.b	d1, d0
+	; Read in coin input from port 1
+	move.w	(PORT_IN1).l, d1
+	lsl.w	#$8, d1
+	ori.w	#$FEFF, d1
+	and.w	d1, d0
+	; Read test button from port 1
+;	move.w	(PORT_IN1).l, d1
+;	lsl.w	#7, d1
+;	ori.w	#$FDFF, d1
+;	and.w	d1, d0
+
+	move.w	(sp)+, d1
+	rts
+
+read_port1_d1:
+	move.w	d0, -(sp)
+	; Base inputs are on high of port 0
+	move.w	(PORT_IN0).l, d1
+	lsr.w	#8, d1
+	ori.w	#$FF80, d1	
+	; Get start button from port 1
+	move.w	(PORT_IN1).l, d0
+	lsl.w	#2, d0
+	ori.b	#$7F, d0
+	and.b	d0, d1
+	; Coin input from port 1
+	move.w	(PORT_IN1).l, d0
+	lsl.w	#7, d0
+	ori.w	#$FEFF, d0
+	and.w	d0, d1
+	; Service input from port 1
+	move.w	(PORT_IN1).l, d0
+	lsl.w	#6, d0
+	ori.w	#$FDFF, d0
+	and.w	d0, d1
+	move.w	(sp)+, d0
+	rts
+
+read_port0_custom:
+	rts
